@@ -1,0 +1,57 @@
+# Python
+pycache/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+; Virtual environments
+.venv/
+venv/
+ENV/
+env/
+
+; IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+; OS
+.DS_Store
+Thumbs.db
+
+; Git
+.git/
+.gitignore
+
+; 弹幕数据目录（运行时创建）
+danmu_data/
+
+; 日志文件
+*.log
+
+; 临时文件
+*.tmp
+*.temp
+
+; Docker
+Dockerfile
+.dockerignore
+docker-compose.yml
