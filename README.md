@@ -10,11 +10,11 @@
 
 运行入口位置：[app.run()](app.py:679)  
 关键 API 注册位置：
-- DPlayer 弹幕 API：[&commat;app.route('/api/dplayer/v3/')](app.py:33)
-- 搜索弹幕接口：[&commat;app.route('/api/danmaku/search')](app.py:228)
-- 获取集数接口：[&commat;app.route('/api/danmaku/episodes')](app.py:278)
-- 下载弹幕接口：[&commat;app.route('/api/danmaku/download')](app.py:516)
-- 清空缓存接口：[&commat;app.route('/api/danmaku/clearCache')](app.py:192)
+- DPlayer 弹幕 API：[app.route('/api/dplayer/v3/')](app.py:33)
+- 搜索弹幕接口：[app.route('/api/danmaku/search')](app.py:228)
+- 获取集数接口：[app.route('/api/danmaku/episodes')](app.py:278)
+- 下载弹幕接口：[app.route('/api/danmaku/download')](app.py:516)
+- 清空缓存接口：[app.route('/api/danmaku/clearCache')](app.py:192)
 
 容器健康检查与启动：  
 - 健康检查指令：[HEALTHCHECK](Dockerfile:34)  
@@ -145,7 +145,7 @@ docker run -d --name libretv \
 
 ### 1) 搜索视频
 
-[&commat;app.route('/api/danmaku/search')](app.py:228)
+[app.route('/api/danmaku/search')](app.py:228)
 
 GET /api/danmaku/search?keyword=三体&source=阿B
 
@@ -162,7 +162,7 @@ GET /api/danmaku/search?keyword=三体&source=阿B
 
 ### 2) 获取集数
 
-[&commat;app.route('/api/danmaku/episodes')](app.py:278)
+[app.route('/api/danmaku/episodes')](app.py:278)
 
 GET /api/danmaku/episodes?videoId=xxxx&source=奇异&keyword=三体
 
@@ -180,7 +180,7 @@ GET /api/danmaku/episodes?videoId=xxxx&source=奇异&keyword=三体
 
 ### 3) 下载弹幕（标准化 JSON）
 
-[&commat;app.route('/api/danmaku/download')](app.py:516)
+[app.route('/api/danmaku/download')](app.py:516)
 
 GET /api/danmaku/download?danmakuId=xxxx&source=企鹅&keyword=三体
 
@@ -203,7 +203,7 @@ GET /api/danmaku/download?danmakuId=xxxx&source=企鹅&keyword=三体
 
 ### 4) DPlayer 弹幕 API（读写）
 
-[&commat;app.route('/api/dplayer/v3/')](app.py:33)
+[app.route('/api/dplayer/v3/')](app.py:33)
 
 - 读取（GET）
   - 参数：id（视频唯一标识），max（返回最大条数，默认 1000）
@@ -236,7 +236,7 @@ POST /api/dplayer/v3/
 
 ### 5) 清空弹幕缓存
 
-[&commat;app.route('/api/danmaku/clearCache')](app.py:192)
+[app.route('/api/danmaku/clearCache')](app.py:192)
 
 POST /api/danmaku/clearCache
 
