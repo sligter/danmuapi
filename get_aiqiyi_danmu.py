@@ -6,6 +6,7 @@ from datetime import datetime
 import brotli
 from math import ceil
 import hashlib
+from urllib.parse import parse_qs, urlparse
 from google.protobuf import descriptor_pool, message_factory, descriptor_pb2
 
 class AiqiyiVideoScraper:
@@ -76,6 +77,101 @@ class AiqiyiVideoScraper:
         ))
         self.DanmuMessage = message_factory.GetMessageClass(pool.FindMessageTypeByName('danmu.Danmu'))
 
+    @staticmethod
+    def _extract_tvid(play_url):
+        """Extract iqiyi tvid from semicolon params or a URL."""
+        if not play_url:
+            return ''
+
+        play_url = str(play_url)
+        if play_url.isdigit():
+            return play_url
+
+        for part in play_url.split(';'):
+            if '=' not in part:
+                continue
+            key, value = part.split('=', 1)
+            key = key.split(':')[-1].lstrip('/')
+            if key in ('tvid', 'tvId', 'qipuId'):
+                return value
+
+        query = parse_qs(urlparse(play_url).query)
+        for key in ('tvid', 'tvId', 'qipuId'):
+            if query.get(key):
+                return query[key][0]
+
+        return ''
+
+    @staticmethod
+    def _duration_to_ms(duration):
+        if not duration:
+            return 0
+        if isinstance(duration, (int, float)):
+            return int(duration)
+
+        duration = str(duration)
+        if duration.isdigit():
+            return int(duration)
+
+        parts = duration.split(':')
+        try:
+            seconds = 0
+            for part in parts:
+                seconds = seconds * 60 + float(part)
+            return int(seconds * 1000)
+        except ValueError:
+            return 0
+
+    def _format_album_episode(self, video):
+        tvid = str(video.get('tvId') or video.get('qipuId') or self._extract_tvid(video.get('playUrl', '')))
+        return {
+            'title': video.get('name') or video.get('title') or video.get('shortTitle') or '未知集数',
+            'playUrl': tvid,
+            'duration': self._duration_to_ms(video.get('duration', 0)),
+            'qipuId': tvid,
+            'number': video.get('order') or video.get('number', ''),
+            'vid': video.get('vid', '')
+        }
+
+    def _fetch_album_episodes(self, album_id):
+        url = "https://pcw-api.iqiyi.com/albums/album/avlistinfo"
+        headers = {
+            "accept": "application/json, text/plain, */*",
+            "origin": "https://www.iqiyi.com",
+            "referer": "https://www.iqiyi.com/",
+            "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/134.0.0.0 Safari/537.36"
+        }
+        episodes = []
+        page = 1
+        page_size = 100
+
+        while page <= 20:
+            response = requests.get(
+                url,
+                headers=headers,
+                params={"aid": album_id, "page": page, "size": page_size},
+                timeout=10
+            )
+            response.raise_for_status()
+            payload = response.json()
+            if payload.get("code") != "A00000":
+                break
+
+            episode_list = payload.get("data", {}).get("epsodelist", [])
+            if not episode_list:
+                break
+
+            for video in episode_list:
+                episode = self._format_album_episode(video)
+                if episode["playUrl"]:
+                    episodes.append(episode)
+
+            if len(episode_list) < page_size:
+                break
+            page += 1
+
+        return episodes
+
     def get_video_list(self, query):
         """
         Fetch a list of videos matching the query from Aiqiyi.
@@ -133,7 +229,7 @@ class AiqiyiVideoScraper:
                         album_info = template['albumInfo']
                         results.append({
                             'title': album_info.get('title', ''),
-                            'playUrl': album_info.get('playUrl', '').split(';')[0].split('=')[1] if album_info.get('playUrl') else '',
+                            'playUrl': self._extract_tvid(album_info.get('playUrl', '')),
                             'qipuId': album_info.get('qipuId', ''),
                             'duration': album_info.get('duration', 0)
                         })
@@ -157,6 +253,12 @@ class AiqiyiVideoScraper:
         try:
             # 转为字符串，以统一比较格式
             target_qipu_id_str = str(target_qipu_id)
+
+            if not data:
+                album_episodes = self._fetch_album_episodes(target_qipu_id_str)
+                if album_episodes:
+                    return album_episodes
+                data = {}
             
             if 'data' in data and 'templates' in data['data']:
                 episodes = []
@@ -168,10 +270,15 @@ class AiqiyiVideoScraper:
                         
                         # 如果找到匹配的视频ID
                         if album_qipu_id_str == target_qipu_id_str:
+                            album_episodes = self._fetch_album_episodes(album_qipu_id_str)
+                            if album_episodes:
+                                print(f"找到 {len(album_episodes)} 个集数")
+                                return album_episodes
+
                             # 提取主视频信息
                             main_video_info = {
                                 'title': album_info.get('title', ''),
-                                'playUrl': album_info.get('playUrl', '').split(';')[0].split('=')[1] if album_info.get('playUrl') else '',
+                                'playUrl': self._extract_tvid(album_info.get('playUrl', '')),
                                 'duration': album_info.get('duration', 0)
                             }
                             
@@ -181,7 +288,7 @@ class AiqiyiVideoScraper:
                                     # 提取集数信息
                                     episode = {
                                         'title': video.get('title', '未知集数'),
-                                        'playUrl': video.get('playUrl', '').split(';')[0].split('=')[1] if video.get('playUrl') else '',
+                                        'playUrl': self._extract_tvid(video.get('playUrl', '')),
                                         'duration': video.get('duration', 0),
                                         'qipuId': video.get('qipuId', ''),
                                         'number': video.get('number', '')
@@ -204,7 +311,7 @@ class AiqiyiVideoScraper:
                                     # 返回单集信息
                                     return {
                                         'title': video.get('title', ''),
-                                        'playUrl': video.get('playUrl', '').split(';')[0].split('=')[1] if video.get('playUrl') else '',
+                                        'playUrl': self._extract_tvid(video.get('playUrl', '')),
                                         'duration': video.get('duration', 0)
                                     }
             
@@ -232,7 +339,7 @@ class AiqiyiVideoScraper:
                         if str(album_info.get('qipuId', '')) == target_qipu_id_str:
                             return {
                                 'title': album_info.get('title', ''),
-                                'playUrl': album_info.get('playUrl', '').split(';')[0].split('=')[1] if album_info.get('playUrl') else '',
+                                'playUrl': self._extract_tvid(album_info.get('playUrl', '')),
                                 'duration': album_info.get('duration', 0)
                             }
                             
@@ -242,7 +349,7 @@ class AiqiyiVideoScraper:
                                 if str(video.get('qipuId', '')) == target_qipu_id_str:
                                     return {
                                         'title': video.get('title', ''),
-                                        'playUrl': video.get('playUrl', '').split(';')[0].split('=')[1] if video.get('playUrl') else '',
+                                        'playUrl': self._extract_tvid(video.get('playUrl', '')),
                                         'duration': video.get('duration', 0)
                                     }
             

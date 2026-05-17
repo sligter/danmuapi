@@ -108,9 +108,7 @@ class DanmakuLoader:
                                     # 提取每集信息
                                     play_url = ""
                                     if video.get('playUrl'):
-                                        parts = video.get('playUrl').split(';')
-                                        if parts and '=' in parts[0]:
-                                            play_url = parts[0].split('=')[1]
+                                        play_url = self.aiqiyi_scraper._extract_tvid(video.get('playUrl'))
                                     
                                     formatted_episodes.append({
                                         'title': video.get('title', '未命名'),

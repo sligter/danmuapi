@@ -15,6 +15,18 @@ class TencentVideoScraper:
         self.base_dir = base_dir
         os.makedirs(base_dir, exist_ok=True)
 
+    @staticmethod
+    def _unique_episodes(episodes):
+        unique = []
+        seen = set()
+        for episode in episodes:
+            vid = episode.get("vid")
+            if not vid or vid in seen:
+                continue
+            seen.add(vid)
+            unique.append(episode)
+        return unique
+
     def get_video_list(self, query):
         """
         Fetch a list of videos matching the query from Tencent Video.
@@ -144,6 +156,10 @@ class TencentVideoScraper:
         Returns:
         - list of dict: List containing playTitle and vid.
         """
+        result = self._get_page_data_episodes(video_id)
+        if result:
+            return result
+
         url = f'https://v.qq.com/x/cover/{video_id}.html'
         print(url)
         try:
@@ -151,18 +167,16 @@ class TencentVideoScraper:
             response.raise_for_status()
             response.encoding = 'utf-8'
             html_content = response.text
-            with open('response_debug.txt', 'w', encoding='utf-8') as f:
-                f.write(html_content)
         except requests.RequestException as e:
             print(f"Error fetching video info: {e}")
             return []
 
-        pattern = re.compile(r'\"vid\":\"(.*?)\".*?\"playTitle\":\"(.*?)\"')
+        pattern = re.compile(r'(?:\"vid\"|vid):\"(.*?)\".*?(?:\"playTitle\"|playTitle):\"(.*?)\"')
         matches = pattern.findall(html_content)
-        result = [{"playTitle": match[1], "vid": match[0]} for match in matches[::-1]]
+        result = self._unique_episodes([{"playTitle": match[1], "vid": match[0]} for match in matches])
         
         # 提取cid
-        cid_pattern = re.compile(r'\"cid\":\s*\"(.*?)\"')
+        cid_pattern = re.compile(r'(?:\"cid\"|cid):\s*\"(.*?)\"')
         cid_match = cid_pattern.search(html_content)
         cid = cid_match.group(1) if cid_match else video_id
         
@@ -214,7 +228,116 @@ class TencentVideoScraper:
             except Exception as e:
                 print(f"Error fetching next page data: {e}")
         
+        return self._unique_episodes(result)
+
+    def _get_page_data_episodes(self, cid):
+        try:
+            data = self._request_page_data(cid, "")
+            result = self._extract_episodes_from_page_data(data)
+
+            for tab in self._extract_tabs_from_page_data(data):
+                if tab.get("selected") or tab.get("isSelected"):
+                    continue
+
+                page_context = tab.get("page_context") or tab.get("pageContext") or ""
+                if page_context:
+                    result.extend(self._get_tab_episodes(cid, page_context))
+
+            response_data = data.get("data", {}) if isinstance(data, dict) else {}
+            if response_data.get("has_next_page") and response_data.get("next_page_context"):
+                result.extend(self._get_next_page_episodes(cid, response_data["next_page_context"]))
+
+            return self._unique_episodes(result)
+        except Exception as e:
+            print(f"Error fetching Tencent page data episodes: {e}")
+            return []
+
+    def _request_page_data(self, cid, page_context="", page_params=None):
+        url = 'https://pbaccess.video.qq.com/trpc.universal_backend_service.page_server_rpc.PageServer/GetPageData'
+        params = {
+            'video_appid': '3000010',
+            'vplatform': '2',
+            'vversion_name': '8.2.96'
+        }
+        headers = {
+            'accept': 'application/json, text/plain, */*',
+            'accept-language': 'zh-CN,zh;q=0.9,en;q=0.8',
+            'content-type': 'application/json',
+            'origin': 'https://v.qq.com',
+            'referer': 'https://v.qq.com/',
+            'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36'
+        }
+        default_page_params = {
+            "req_from": "web_vsite",
+            "page_id": "vsite_episode_list",
+            "page_type": "detail_operation",
+            "id_type": "1",
+            "page_size": "",
+            "cid": cid,
+            "vid": "",
+            "lid": "",
+            "page_num": "",
+            "page_context": page_context
+        }
+        if page_params:
+            default_page_params.update(page_params)
+
+        payload = {
+            "page_params": default_page_params,
+            "has_cache": 1
+        }
+        response = requests.post(url, params=params, headers=headers, json=payload, timeout=10)
+        response.raise_for_status()
+        return response.json()
+
+    def _extract_episodes_from_page_data(self, data):
+        result = []
+        module_list_datas = data.get('data', {}).get('module_list_datas', []) if isinstance(data, dict) else []
+
+        for module in module_list_datas:
+            for mod_data in module.get('module_datas', []):
+                item_data_lists = mod_data.get('item_data_lists', {})
+                item_datas = item_data_lists.get('item_datas', [])
+
+                for item in item_datas:
+                    if item.get('item_type') == '1' or item.get('item_type') == 1:
+                        item_params = item.get('item_params', {})
+                        vid = item_params.get('vid') or item.get('item_id', '')
+                        play_title = (
+                            item_params.get('play_title')
+                            or item_params.get('union_title')
+                            or item_params.get('title')
+                            or vid
+                        )
+
+                        if vid and play_title:
+                            result.append({
+                                "playTitle": play_title,
+                                "vid": vid
+                            })
+
         return result
+
+    def _extract_tabs_from_page_data(self, data):
+        tabs = []
+        module_list_datas = data.get('data', {}).get('module_list_datas', []) if isinstance(data, dict) else []
+
+        for module in module_list_datas:
+            for mod_data in module.get('module_datas', []):
+                module_params = mod_data.get('module_params', {})
+                tabs_data = module_params.get('tabs') or mod_data.get('tabs')
+                if not tabs_data:
+                    continue
+
+                if isinstance(tabs_data, str):
+                    try:
+                        tabs.extend(json.loads(tabs_data))
+                    except json.JSONDecodeError:
+                        continue
+                elif isinstance(tabs_data, list):
+                    tabs.extend(tabs_data)
+
+        return tabs
 
     def _get_tab_episodes(self, cid, page_context):
         """
@@ -435,11 +558,11 @@ class TencentVideoScraper:
 
 if __name__ == "__main__":
     scraper = TencentVideoScraper(base_dir="danmu_data")
-    query = "庆余年第二季"
+    query = "现在就出发"
     video_list = scraper.get_video_list(query)
     print(video_list)
-    item_list = scraper.get_video_info(video_list[0]['id'])
-    print(item_list)
+    # item_list = scraper.get_video_info(video_list[0]['id'])
+    # print(item_list)
     # video_info = scraper.get_video_info("mzc00200y41tzil")
     # print(video_info)
     # scraper.fetch_danmu('v41002r8czq')

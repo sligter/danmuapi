@@ -294,29 +294,29 @@ def get_danmaku_episodes():
         elif source == "奇异":
             # 对于爱奇艺，需要调用另一个API方法
             try:
-                # 先使用传入的keyword或video_id进行搜索
-                search_term = keyword if keyword else video_id
-                print(f"爱奇艺弹幕搜索关键词: {search_term}")
-                
-                video_list, data = aiqiyi_scraper.get_video_list(search_term)
-                if not video_list:
-                    return jsonify({"code": 404, "message": "未找到视频信息"})
-                
-                # 尝试匹配视频ID
-                matched_video = None
-                for video in video_list:
-                    if str(video["qipuId"]) == str(video_id):
-                        matched_video = video
-                        break
-                
-                if not matched_video:
-                    print(f"未找到匹配的爱奇艺视频ID: {video_id}")
-                    # 如果找不到匹配的视频，使用第一个
-                    matched_video = video_list[0]
-                    print(f"使用第一个视频: {matched_video['title']} (ID: {matched_video['qipuId']})")
-                
-                # 获取视频集数信息
-                video_info = aiqiyi_scraper.get_video_info(data, int(matched_video["qipuId"]))
+                matched_video = {"qipuId": video_id}
+                data = None
+
+                if keyword:
+                    print(f"爱奇艺弹幕搜索关键词: {keyword}")
+                    video_list, data = aiqiyi_scraper.get_video_list(keyword)
+
+                    matched_video = None
+                    for video in video_list:
+                        if str(video["qipuId"]) == str(video_id):
+                            matched_video = video
+                            break
+
+                    if not matched_video and video_list:
+                        print(f"未找到匹配的爱奇艺视频ID: {video_id}")
+                        # 如果找不到匹配的视频，使用第一个
+                        matched_video = video_list[0]
+                        print(f"使用第一个视频: {matched_video['title']} (ID: {matched_video['qipuId']})")
+                    elif not matched_video:
+                        matched_video = {"qipuId": video_id}
+
+                # 获取视频集数信息；没有 keyword 时直接把 video_id 当专辑 ID 兜底请求
+                video_info = aiqiyi_scraper.get_video_info(data, matched_video["qipuId"])
                 
                 # 检查返回结果类型
                 if isinstance(video_info, list):
@@ -356,9 +356,7 @@ def get_danmaku_episodes():
                                     for video in videos:
                                         play_url = ""
                                         if video.get('playUrl'):
-                                            parts = video.get('playUrl').split(';')
-                                            if parts and '=' in parts[0]:
-                                                play_url = parts[0].split('=')[1]
+                                            play_url = aiqiyi_scraper._extract_tvid(video.get('playUrl'))
                                         
                                         episodes.append({
                                             "id": play_url,
@@ -369,9 +367,7 @@ def get_danmaku_episodes():
                                     # 如果没有videos数组，直接添加当前项
                                     play_url = ""
                                     if template['albumInfo'].get('playUrl'):
-                                        parts = template['albumInfo'].get('playUrl').split(';')
-                                        if parts and '=' in parts[0]:
-                                            play_url = parts[0].split('=')[1]
+                                        play_url = aiqiyi_scraper._extract_tvid(template['albumInfo'].get('playUrl'))
                                     
                                     episodes.append({
                                         "id": play_url,
