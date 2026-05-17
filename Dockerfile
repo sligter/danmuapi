@@ -28,7 +28,7 @@ COPY . .
 RUN mkdir -p danmu_data/youku danmu_data/dplayer danmu_data/bilibili danmu_data/tencent danmu_data/iqiyi danmu_data/mgtv
 
 # 暴露端口
-EXPOSE 5005
+EXPOSE 5006
 
 # 设置健康检查（指定命令并使用暴露的端口）
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 CMD curl -f http://localhost:5005/ || exit 1

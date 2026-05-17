@@ -1,0 +1,11 @@
+services:
+  danmuapi:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: danmuapi
+    ports:
+      - "5006:5005"
+    volumes:
+      - ./danmu_data:/app/danmu_data
+    restart: unless-stopped
