@@ -1,2 +1,3 @@
 .venv
 danmu_data/
+__pycache__/

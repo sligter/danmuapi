@@ -7,6 +7,10 @@ WORKDIR /app
 # 设置环境变量
 ENV PYTHONUNBUFFERED=1
 ENV PYTHONDONTWRITEBYTECODE=1
+ARG PYPI_INDEX_URL=https://pypi.tuna.tsinghua.edu.cn/simple
+ENV PIP_INDEX_URL=${PYPI_INDEX_URL}
+ENV PIP_TIMEOUT=120
+ENV UV_DEFAULT_INDEX=${PYPI_INDEX_URL}
 
 # 安装系统依赖
 RUN apt-get update && apt-get install -y curl && rm -rf /var/lib/apt/lists/*
@@ -16,7 +20,7 @@ RUN apt-get update && apt-get install -y curl && rm -rf /var/lib/apt/lists/*
 COPY pyproject.toml uv.lock ./
 
 # 安装uv包管理器
-RUN pip install uv
+RUN pip install --no-cache-dir uv
 
 # 使用uv安装Python依赖
 RUN uv sync --frozen

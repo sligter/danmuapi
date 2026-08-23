@@ -231,26 +231,61 @@ class TencentVideoScraper:
         return self._unique_episodes(result)
 
     def _get_page_data_episodes(self, cid):
+        """循环翻页获取全部分集。
+
+        注意：分页标记在 module_datas[].module_params 的 has_next / next_page_context，
+        而不是顶层 data.has_next_page / data.next_page_context。
+        """
+        result = []
+        page_context = ""
+        max_pages = 200  # 安全上限，防止异常情况下死循环
         try:
-            data = self._request_page_data(cid, "")
-            result = self._extract_episodes_from_page_data(data)
+            for page_index in range(max_pages):
+                data = self._request_page_data(cid, page_context)
+                result.extend(self._extract_episodes_from_page_data(data))
 
-            for tab in self._extract_tabs_from_page_data(data):
-                if tab.get("selected") or tab.get("isSelected"):
-                    continue
+                # 处理非选中标签页（如预告、加更、番外等），仅首页需要处理
+                if page_index == 0:
+                    for tab in self._extract_tabs_from_page_data(data):
+                        if tab.get("selected") or tab.get("isSelected"):
+                            continue
 
-                page_context = tab.get("page_context") or tab.get("pageContext") or ""
-                if page_context:
-                    result.extend(self._get_tab_episodes(cid, page_context))
+                        page_ctx = tab.get("page_context") or tab.get("pageContext") or ""
+                        if page_ctx:
+                            result.extend(self._get_tab_episodes(cid, page_ctx))
 
-            response_data = data.get("data", {}) if isinstance(data, dict) else {}
-            if response_data.get("has_next_page") and response_data.get("next_page_context"):
-                result.extend(self._get_next_page_episodes(cid, response_data["next_page_context"]))
+                # 使用 module_params 中的分页信息翻到下一页
+                has_next, next_ctx = self._extract_module_paging(data)
+                if not (has_next and next_ctx) or next_ctx == page_context:
+                    break
+                page_context = next_ctx
 
             return self._unique_episodes(result)
         except Exception as e:
             print(f"Error fetching Tencent page data episodes: {e}")
-            return []
+            # 即使中途出错，也返回已经获取到的分集
+            return self._unique_episodes(result)
+
+    @staticmethod
+    def _extract_module_paging(data):
+        """从 module_datas[].module_params 中提取分页信息。
+
+        Returns:
+        - tuple: (has_next: bool, next_page_context: str)
+        """
+        if not isinstance(data, dict):
+            return False, ""
+
+        for module in data.get('data', {}).get('module_list_datas', []):
+            for mod_data in module.get('module_datas', []):
+                module_params = mod_data.get('module_params', {})
+                if 'has_next' not in module_params:
+                    continue
+                has_next = str(module_params.get('has_next', '')).lower() == 'true'
+                next_ctx = module_params.get('next_page_context') or ""
+                if has_next and next_ctx:
+                    return True, next_ctx
+        return False, ""
 
     def _request_page_data(self, cid, page_context="", page_params=None):
         url = 'https://pbaccess.video.qq.com/trpc.universal_backend_service.page_server_rpc.PageServer/GetPageData'
@@ -411,15 +446,20 @@ class TencentVideoScraper:
                         # 只处理类型为'1'的项目，表示视频内容
                         if item.get('item_type') == '1' or item.get('item_type') == 1:
                             item_params = item.get('item_params', {})
-                            vid = item_params.get('vid', '')
-                            play_title = item_params.get('play_title', '')
-                            
+                            vid = item_params.get('vid') or item.get('item_id', '')
+                            play_title = (
+                                item_params.get('play_title')
+                                or item_params.get('union_title')
+                                or item_params.get('title')
+                                or vid
+                            )
+
                             if vid and play_title:
                                 result.append({
                                     "playTitle": play_title,
                                     "vid": vid
                                 })
-            
+
             print(f"在标签页中找到 {len(result)} 个视频")
             return result
         except Exception as e:
@@ -473,35 +513,10 @@ class TencentVideoScraper:
             response = requests.post(url, params=params, headers=headers, json=payload)
             response.raise_for_status()
             data = response.json()
-            # print(data)  # 调试时可保留
-            
+
             # 解析返回的结果，提取集数信息
-            result = []
-            module_list_datas = data.get('data', {}).get('module_list_datas', [])
-            
-            for module in module_list_datas:
-                module_datas = module.get('module_datas', [])
-                
-                # 处理新的数据结构
-                for mod_data in module_datas:
-                    item_data_lists = mod_data.get('item_data_lists', {})
-                    item_datas = item_data_lists.get('item_datas', [])
-                    
-                    for item in item_datas:
-                        # 只处理类型为'1'的项目，表示视频内容
-                        if item.get('item_type') == '1' or item.get('item_type') == 1:
-                            item_params = item.get('item_params', {})
-                            vid = item_params.get('vid', '')
-                            play_title = item_params.get('play_title', '')
-                            
-                            if vid and play_title:
-                                result.append({
-                                    "playTitle": play_title,
-                                    "vid": vid
-                                })
-                                # 打印找到的视频，便于调试
-                                # print(f"Found video: {play_title} - {vid}")
-            
+            result = self._extract_episodes_from_page_data(data)
+
             print(f"总共找到 {len(result)} 个视频")
             return result
         except Exception as e:
